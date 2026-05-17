@@ -52,7 +52,7 @@ session_start();
 <?php endif; ?>
     <nav class="navbar navbar-expand-lg navbar-dark ftco_navbar bg-dark ftco-navbar-light" id="ftco-navbar">
 	    <div class="container">
-	      <a class="navbar-brand" href="index.php">BIOSCIENCE LABS</a>
+	      <a class="navbar-brand" href="index.php"><img src="images/logo-bioscience.png" alt="Bioscience Labs" style="height: 40px;"></a>
 	      <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#ftco-nav" aria-controls="ftco-nav" aria-expanded="false" aria-label="Toggle navigation">
 	        <span class="oi oi-menu"></span> Menu
 	      </button>
@@ -67,7 +67,7 @@ session_start();
 	          <?php else: ?>
 	            <li class="nav-item"><a href="login/signin.php" class="nav-link">Login</a></li>
 	          <?php endif; ?>
-	          <li class="nav-item cta cta-colored"><a href="cart.php" class="nav-link"><span class="icon-shopping_cart"></span>[0]</a></li>
+	          <li class="nav-item cta cta-colored"><a href="cart.php" class="nav-link"><span class="icon-shopping_cart"></span>[<?= count($_SESSION['cart'] ?? []) ?>]</a></li>
 
 	        </ul>
 	      </div>

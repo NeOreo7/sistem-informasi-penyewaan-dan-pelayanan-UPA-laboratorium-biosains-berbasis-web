@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once 'database.php';
 require_once 'auth.php';
 
@@ -239,7 +239,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
   <div class="card " style="max-width:420px; width:100%;">
     <div class="card-body p-5">
       <div class="text-center mb-3">
-     <a href="minishop-master/index.php" class="mb-4 d-inline-block"><img src="./assets/images/logo-icon.svg" alt="" width="36">
+     <a href="project-smt2/index.php" class="mb-4 d-inline-block"><img src="./assets/images/logo-icon.svg" alt="" width="36">
       <span class="ms-2"> <img src="./assets/images/logo.svg" alt=""></span>
       </a>
         <h1 class="card-title mb-5 h5">Daftar Akun</h1>

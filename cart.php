@@ -49,80 +49,148 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_qty'])) {
 
 // Checkout - simpan order ke database
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['checkout'])) {
-  $nama_pemesan    = trim($_POST['nama'] ?? '');
-  $waktu           = $_POST['waktu'] ?? '';
-  $bukti_file      = '';
+  $nama_pemesan = trim($_POST['nama'] ?? '');
+  $bukti_file   = '';
 
-  // Upload bukti transfer
-  if (isset($_FILES['bukti_transfer']) && $_FILES['bukti_transfer']['error'] == 0) {
-    $dir = 'images/';
-    $ext = pathinfo($_FILES['bukti_transfer']['name'], PATHINFO_EXTENSION);
-    $bukti_file = 'bukti_' . time() . '_' . $id_user . '.' . $ext;
-    move_uploaded_file($_FILES['bukti_transfer']['tmp_name'], $dir . $bukti_file);
+  // Terima waktu per kategori
+  // Sewa Alat: tanggal + slot jam (08:00/11:00/14:00)
+  $waktu_alat     = '';
+  $alat_date      = trim($_POST['waktu_alat_date'] ?? '');
+  $alat_slot      = trim($_POST['waktu_alat_slot'] ?? '');
+  if ($alat_date && $alat_slot) {
+    $waktu_alat = $alat_date . ' ' . $alat_slot . ':00'; // '2026-05-16 08:00:00'
+  }
+  // Sewa Ruangan: bulan → simpan sebagai hari pertama bulan
+  $waktu_ruangan  = '';
+  $ruangan_month  = trim($_POST['waktu_ruangan_month'] ?? '');
+  if ($ruangan_month) {
+    $waktu_ruangan = $ruangan_month . '-01 00:00:00';
+  }
+  // Pengujian: tanggal saja
+  $waktu_pengujian = '';
+  $pengujian_date  = trim($_POST['waktu_pengujian_date'] ?? '');
+  if ($pengujian_date) {
+    $waktu_pengujian = $pengujian_date . ' 00:00:00';
   }
 
-  if (empty($_SESSION['cart']) || empty($nama_pemesan) || empty($waktu) || empty($bukti_file)) {
-    $checkout_error = "Lengkapi semua data dan upload bukti transfer.";
-  } else {
-    // Hitung total
-    $cart_ids = array_keys($_SESSION['cart']);
-    $placeholders = implode(',', array_fill(0, count($cart_ids), '?'));
-    $types = str_repeat('i', count($cart_ids));
+  // Waktu utama order (prioritas: alat > ruangan > pengujian)
+  $waktu = $waktu_alat ?: $waktu_ruangan ?: $waktu_pengujian;
 
-    $stmt_prod = $conn->prepare("SELECT p.id_product, p.nama_produk,
+  // Deteksi kategori dari cart
+  $has_alat     = false;
+  $has_ruangan  = false;
+  $has_pengujian = false;
+  if (!empty($_SESSION['cart'])) {
+    $chk_ids = array_keys($_SESSION['cart']);
+    $chk_pl  = implode(',', array_fill(0, count($chk_ids), '?'));
+    $chk_st  = $conn->prepare("SELECT id_product, kategori FROM products WHERE id_product IN ($chk_pl)");
+    $chk_st->bind_param(str_repeat('i', count($chk_ids)), ...$chk_ids);
+    $chk_st->execute();
+    $chk_res = $chk_st->get_result();
+    $product_kategori = []; // id_product => kategori
+    while ($cr = $chk_res->fetch_assoc()) {
+      $product_kategori[$cr['id_product']] = $cr['kategori'];
+      if ($cr['kategori'] === 'Sewa Alat')    $has_alat      = true;
+      if ($cr['kategori'] === 'Sewa Ruangan') $has_ruangan   = true;
+      if ($cr['kategori'] === 'Pengujian')    $has_pengujian = true;
+    }
+  }
+
+  // Validasi: waktu wajib sesuai kategori yang ada
+  $checkout_error = null;
+  if ($has_alat && empty($waktu_alat))         $checkout_error = "Pilih tanggal dan slot jam untuk Sewa Alat.";
+  if ($has_ruangan && empty($waktu_ruangan))   $checkout_error = "Pilih bulan untuk Sewa Ruangan.";
+  if ($has_pengujian && empty($waktu_pengujian)) $checkout_error = "Pilih tanggal untuk Pengujian.";
+
+  // Validasi tanggal tidak lampau (untuk alat dan pengujian)
+  if (!$checkout_error && $waktu_alat && strtotime($waktu_alat) <= time())
+    $checkout_error = "Slot Sewa Alat sudah lampau.";
+  if (!$checkout_error && $waktu_pengujian && strtotime($waktu_pengujian) < strtotime('today'))
+    $checkout_error = "Tanggal Pengujian sudah lampau.";
+
+  if (!$checkout_error) {
+    // Upload bukti transfer
+    if (isset($_FILES['bukti_transfer']) && $_FILES['bukti_transfer']['error'] == 0) {
+      $dir = 'images/';
+      $ext = pathinfo($_FILES['bukti_transfer']['name'], PATHINFO_EXTENSION);
+      $bukti_file = 'bukti_' . time() . '_' . $id_user . '.' . $ext;
+      move_uploaded_file($_FILES['bukti_transfer']['tmp_name'], $dir . $bukti_file);
+    }
+
+    if (empty($_SESSION['cart']) || empty($nama_pemesan) || empty($waktu) || empty($bukti_file)) {
+      $checkout_error = "Lengkapi semua data dan upload bukti transfer.";
+    } else {
+      // Hitung total
+      $cart_ids = array_keys($_SESSION['cart']);
+      $placeholders = implode(',', array_fill(0, count($cart_ids), '?'));
+      $types = str_repeat('i', count($cart_ids));
+
+      $stmt_prod = $conn->prepare("SELECT p.id_product, p.nama_produk, p.kategori,
             MAX(CASE WHEN pr.id_role = ? THEN pr.nominal_harga END) AS harga
             FROM products p
             LEFT JOIN prices pr ON p.id_product = pr.id_product
             WHERE p.id_product IN ($placeholders)
             GROUP BY p.id_product");
-    $params = array_merge([$id_role], $cart_ids);
-    $stmt_prod->bind_param('i' . $types, ...$params);
-    $stmt_prod->execute();
-    $prod_res = $stmt_prod->get_result();
+      $params = array_merge([$id_role], $cart_ids);
+      $stmt_prod->bind_param('i' . $types, ...$params);
+      $stmt_prod->execute();
+      $prod_res = $stmt_prod->get_result();
 
-    $grand_total = 0;
-    $items_data = [];
-    while ($p = $prod_res->fetch_assoc()) {
-      $qty = $_SESSION['cart'][$p['id_product']];
-      $harga = $p['harga'] ?? 0;
-      $subtotal = $harga * $qty;
-      $grand_total += $subtotal;
-      $items_data[] = [
-        'id_product' => $p['id_product'],
-        'nama'       => $p['nama_produk'],
-        'qty'        => $qty,
-        'harga'      => $harga,
-        'subtotal'   => $subtotal,
-      ];
-    }
+      $grand_total = 0;
+      $items_data  = [];
+      while ($p = $prod_res->fetch_assoc()) {
+        $qty      = $_SESSION['cart'][$p['id_product']];
+        $harga    = $p['harga'] ?? 0;
+        $subtotal = $harga * $qty;
+        $grand_total += $subtotal;
+        // Tentukan waktu_item per kategori produk
+        $kat = $p['kategori'];
+        if ($kat === 'Sewa Alat')    $wi = $waktu_alat;
+        elseif ($kat === 'Sewa Ruangan') $wi = $waktu_ruangan;
+        else                             $wi = $waktu_pengujian;
+        $items_data[] = [
+          'id_product'  => $p['id_product'],
+          'nama'        => $p['nama_produk'],
+          'qty'         => $qty,
+          'harga'       => $harga,
+          'subtotal'    => $subtotal,
+          'waktu_item'  => $wi ?: $waktu,
+        ];
+      }
 
-    // Generate invoice number
-    $inv_num = 'INV-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -5));
+      // Generate invoice
+      $inv_num = 'INV-' . date('Ymd') . '-' . strtoupper(substr(uniqid(), -5));
 
-    // Insert order
-    $stmt_ord = $conn->prepare(
-      "INSERT INTO orders (id_user, grand_total, status_order, invoice_number, waktu_pelaksanaan, nama_pemesan, bukti_transfer, created_at)
+      // Insert order
+      $stmt_ord = $conn->prepare(
+        "INSERT INTO orders (id_user, grand_total, status_order, invoice_number, waktu_pelaksanaan, nama_pemesan, bukti_transfer, created_at)
              VALUES (?, ?, 'Pending', ?, ?, ?, ?, NOW())"
-    );
-    $stmt_ord->bind_param("idssss", $id_user, $grand_total, $inv_num, $waktu, $nama_pemesan, $bukti_file);
-    $stmt_ord->execute();
-    $id_order = $stmt_ord->insert_id;
+      );
+      $stmt_ord->bind_param("idssss", $id_user, $grand_total, $inv_num, $waktu, $nama_pemesan, $bukti_file);
+      $stmt_ord->execute();
+      $id_order = $stmt_ord->insert_id;
 
-    // Insert order_items
-    $stmt_item = $conn->prepare(
-      "INSERT INTO order_items (id_order, id_product, qty, harga_satuan, subtotal) VALUES (?, ?, ?, ?, ?)"
-    );
-    foreach ($items_data as $it) {
-      $stmt_item->bind_param("iiidd", $id_order, $it['id_product'], $it['qty'], $it['harga'], $it['subtotal']);
-      $stmt_item->execute();
+      // Insert order_items dengan waktu_item per item
+      $stmt_item = $conn->prepare(
+        "INSERT INTO order_items (id_order, id_product, qty, harga_satuan, subtotal, waktu_item) VALUES (?, ?, ?, ?, ?, ?)"
+      );
+      foreach ($items_data as $it) {
+        $stmt_item->bind_param("iiidds", $id_order, $it['id_product'], $it['qty'], $it['harga'], $it['subtotal'], $it['waktu_item']);
+        $stmt_item->execute();
+      }
+
+      $_SESSION['cart'] = [];
+      header("Location: pesanan.php?order=success");
+      exit;
     }
-
-    // Kosongkan cart
-    $_SESSION['cart'] = [];
-    header("Location: pesanan.php?order=success");
-    exit;
   }
 }
+
+
+// --- DETEKSI KATEGORI UNIK DI CART ---
+$cart_has_alat     = false;
+$cart_has_ruangan  = false;
+$cart_has_pengujian = false;
 
 // --- AMBIL DATA PRODUK DI CART ---
 $cart_items = [];
@@ -132,7 +200,7 @@ if (!empty($_SESSION['cart'])) {
   $placeholders = implode(',', array_fill(0, count($cart_ids), '?'));
   $types = str_repeat('i', count($cart_ids));
 
-  $stmt = $conn->prepare("SELECT p.id_product, p.nama_produk, p.foto, p.duration_unit,
+  $stmt = $conn->prepare("SELECT p.id_product, p.nama_produk, p.foto, p.duration_unit, p.kategori,
         MAX(CASE WHEN pr.id_role = ? THEN pr.nominal_harga END) AS harga
         FROM products p
         LEFT JOIN prices pr ON p.id_product = pr.id_product
@@ -144,10 +212,14 @@ if (!empty($_SESSION['cart'])) {
   $res = $stmt->get_result();
   while ($row = $res->fetch_assoc()) {
     $qty = $_SESSION['cart'][$row['id_product']];
-    $row['qty'] = $qty;
+    $row['qty']     = $qty;
     $row['subtotal'] = ($row['harga'] ?? 0) * $qty;
-    $grand_total += $row['subtotal'];
-    $cart_items[] = $row;
+    $grand_total   += $row['subtotal'];
+    $cart_items[]   = $row;
+    // Deteksi kategori
+    if ($row['kategori'] === 'Sewa Alat')    $cart_has_alat     = true;
+    if ($row['kategori'] === 'Sewa Ruangan') $cart_has_ruangan  = true;
+    if ($row['kategori'] === 'Pengujian')    $cart_has_pengujian = true;
   }
 }
 
@@ -201,7 +273,7 @@ if ($booked_times) {
   </div>
   <nav class="navbar navbar-expand-lg navbar-dark ftco_navbar bg-dark ftco-navbar-light" id="ftco-navbar">
     <div class="container">
-      <a class="navbar-brand" href="index.php">BIOSCIENCE LABS</a>
+      <a class="navbar-brand" href="index.php"><img src="images/logo-bioscience.png" alt="Bioscience Labs" style="height: 40px;"></a>
       <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#ftco-nav" aria-controls="ftco-nav" aria-expanded="false" aria-label="Toggle navigation">
         <span class="oi oi-menu"></span> Menu
       </button>
@@ -297,10 +369,50 @@ if ($booked_times) {
                   placeholder="Masukkan nama lengkap Anda"
                   value="<?= htmlspecialchars($_SESSION['id_user']['nama_lengkap'] ?? '') ?>">
               </div>
-              <div class="form-group">
-                <label for="waktu">Waktu / Tanggal Pelaksanaan</label>
-                <input type="datetime-local" name="waktu" id="waktu" class="form-control" required>
-              </div>
+              <?php
+              // --- BLOK WAKTU: Sewa Alat ---
+              if ($cart_has_alat): ?>
+                <div class="form-group" id="section-cart-alat">
+                  <label class="font-weight-bold"><span class="ion-ios-flask mr-1"></span>Jadwal Sewa Alat</label>
+                  <input type="date" name="waktu_alat_date" id="waktu_alat_date" class="form-control mb-2"
+                    min="<?= date('Y-m-d') ?>" required placeholder="Pilih tanggal">
+                  <div class="d-flex flex-wrap" style="gap:8px;" id="cart-slot-buttons">
+                    <button type="button" class="btn btn-sm cart-slot-btn" data-slot="08:00">08:00</button>
+                    <button type="button" class="btn btn-sm cart-slot-btn" data-slot="11:00">11:00</button>
+                    <button type="button" class="btn btn-sm cart-slot-btn" data-slot="14:00">14:00</button>
+                  </div>
+                  <input type="hidden" name="waktu_alat_slot" id="waktu_alat_slot" value="">
+                  <small class="text-muted d-block mt-1">Pilih tanggal lalu pilih slot jam yang tersedia</small>
+                  <div id="alat-slot-error" class="alert alert-warning mt-2 py-2" style="display:none;font-size:.9rem;">
+                    <span class="ion-ios-warning mr-1"></span> Pilih tanggal dan slot jam.
+                  </div>
+                </div>
+              <?php endif; ?>
+
+              <?php
+              // --- BLOK WAKTU: Sewa Ruangan ---
+              if ($cart_has_ruangan): ?>
+                <div class="form-group" id="section-cart-ruangan">
+                  <label class="font-weight-bold"><span class="ion-ios-home mr-1"></span>Jadwal Sewa Ruangan</label>
+                  <input type="month" name="waktu_ruangan_month" id="waktu_ruangan_month" class="form-control"
+                    min="<?= date('Y-m') ?>" required>
+                  <small class="text-muted">Kapasitas: maks. 25 orang/bulan</small>
+                </div>
+              <?php endif; ?>
+
+              <?php
+              // --- BLOK WAKTU: Pengujian ---
+              if ($cart_has_pengujian): ?>
+                <div class="form-group" id="section-cart-pengujian">
+                  <label class="font-weight-bold"><span class="ion-ios-analytics mr-1"></span>Tanggal Pengujian</label>
+                  <input type="date" name="waktu_pengujian_date" id="waktu_pengujian_date" class="form-control"
+                    min="<?= date('Y-m-d') ?>" required>
+                  <small class="text-muted">Jeda 3 hari antar-pesanan diterapkan otomatis</small>
+                  <div id="pengujian-past-error" class="alert alert-warning mt-2 py-2" style="display:none;font-size:.9rem;">
+                    <span class="ion-ios-warning mr-1"></span> Pemesanan hanya untuk jadwal mendatang.
+                  </div>
+                </div>
+              <?php endif; ?>
               <div class="form-group">
                 <label for="bukti_transfer">Upload Bukti Transfer</label>
                 <div class="alert alert-info py-2 px-3 mb-2" style="font-size:0.9rem;">
@@ -363,13 +475,13 @@ if ($booked_times) {
                   <div style="margin-right: 15px;">
                     <span class="icon ion-ios-pin" style="color: #fff; font-size: 18px;"></span>
                   </div>
-                  <span class="text" style="color: rgba(255,255,255,0.9); font-size: 14px;">Jl.ssssss</span>
+                  <span class="text" style="color: rgba(255,255,255,0.9); font-size: 14px;">Jl. Mastrip PO BOX 164, Jember - Jawa Timur- Indonesia</span>
                 </li>
                 <li class="d-flex align-items-center mb-3">
                   <div style="margin-right: 15px;">
                     <span class="icon ion-logo-whatsapp" style="color: #fff; font-size: 18px;"></span>
                   </div>
-                  <span class="text" style="color: rgba(255,255,255,0.9); font-size: 14px;">085757575757</span>
+                  <span class="text" style="color: rgba(255,255,255,0.9); font-size: 14px;">+62 852-3339-7889</span>
                 </li>
                 <li class="d-flex align-items-center mb-3">
                   <div style="margin-right: 15px;">
@@ -384,26 +496,181 @@ if ($booked_times) {
       </div>
     </div>
   </footer>
-    <!-- loader -->
-    <div id="ftco-loader" class="show fullscreen"><svg class="circular" width="48px" height="48px">
-        <circle class="path-bg" cx="24" cy="24" r="22" fill="none" stroke-width="4" stroke="#eeeeee" />
-        <circle class="path" cx="24" cy="24" r="22" fill="none" stroke-width="4" stroke-miterlimit="10" stroke="#F96D00" />
-      </svg></div>
+  <!-- loader -->
+  <div id="ftco-loader" class="show fullscreen"><svg class="circular" width="48px" height="48px">
+      <circle class="path-bg" cx="24" cy="24" r="22" fill="none" stroke-width="4" stroke="#eeeeee" />
+      <circle class="path" cx="24" cy="24" r="22" fill="none" stroke-width="4" stroke-miterlimit="10" stroke="#F96D00" />
+    </svg></div>
 
-    <script src="js/jquery.min.js"></script>
-    <script src="js/jquery-migrate-3.0.1.min.js"></script>
-    <script src="js/popper.min.js"></script>
-    <script src="js/bootstrap.min.js"></script>
-    <script src="js/jquery.easing.1.3.js"></script>
-    <script src="js/jquery.waypoints.min.js"></script>
-    <script src="js/jquery.stellar.min.js"></script>
-    <script src="js/owl.carousel.min.js"></script>
-    <script src="js/jquery.magnific-popup.min.js"></script>
-    <script src="js/aos.js"></script>
-    <script src="js/jquery.animateNumber.min.js"></script>
-    <script src="js/bootstrap-datepicker.js"></script>
-    <script src="js/scrollax.min.js"></script>
-    <script src="js/main.js"></script>
+  <script src="js/jquery.min.js"></script>
+  <script src="js/jquery-migrate-3.0.1.min.js"></script>
+  <script src="js/popper.min.js"></script>
+  <script src="js/bootstrap.min.js"></script>
+  <script src="js/jquery.easing.1.3.js"></script>
+  <script src="js/jquery.waypoints.min.js"></script>
+  <script src="js/jquery.stellar.min.js"></script>
+  <script src="js/owl.carousel.min.js"></script>
+  <script src="js/jquery.magnific-popup.min.js"></script>
+  <script src="js/aos.js"></script>
+  <script src="js/jquery.animateNumber.min.js"></script>
+  <script src="js/bootstrap-datepicker.js"></script>
+  <script src="js/scrollax.min.js"></script>
+  <script src="js/main.js"></script>
+
+  <style>
+    .cart-slot-btn {
+      min-width: 72px;
+      font-weight: 600;
+      border-radius: 6px;
+      border: 2px solid #adb5bd;
+      background: #fff;
+      color: #495057;
+    }
+
+    .cart-slot-btn.available {
+      border-color: #28a745;
+      color: #28a745;
+    }
+
+    .cart-slot-btn.taken {
+      border-color: #dc3545;
+      background: #dc3545;
+      color: #fff;
+      opacity: .7;
+      cursor: not-allowed;
+    }
+
+    .cart-slot-btn.selected {
+      background: #28a745;
+      color: #fff;
+      box-shadow: 0 0 0 3px rgba(40, 167, 69, .35);
+    }
+  </style>
+  <script>
+    (function() {
+      // Booking data dari server (raw datetime strings)
+      var bookingsByProduct = <?= json_encode($bookings_by_product) ?>;
+
+      function padZ(n) {
+        return String(n).padStart(2, '0');
+      }
+
+      // ── Sewa Alat: slot buttons ──────────────────────────────────
+      var selectedSlot = null;
+      var alatPids = <?= json_encode(
+                        array_values(array_map(
+                          fn($i) => $i['id_product'],
+                          array_filter($cart_items, fn($i) => $i['kategori'] === 'Sewa Alat')
+                        ))
+                      ) ?>;
+
+      function getAlatBookings() {
+        var set = new Set();
+        alatPids.forEach(function(pid) {
+          (bookingsByProduct[pid] || []).forEach(function(dt) {
+            set.add(dt.substring(0, 13)); // 'YYYY-MM-DD HH'
+          });
+        });
+        return set;
+      }
+
+      var dateInput = document.getElementById('waktu_alat_date');
+      var slotInput = document.getElementById('waktu_alat_slot');
+      var slotBtns = document.querySelectorAll('.cart-slot-btn');
+
+      function updateSlots(dateStr) {
+        if (!slotBtns.length || !dateStr) return;
+        var booked = getAlatBookings();
+        var today = new Date().toISOString().substring(0, 10);
+        var nowH = new Date().getHours();
+        slotBtns.forEach(function(btn) {
+          var slot = btn.dataset.slot;
+          var hour = parseInt(slot.split(':')[0]);
+          var key = dateStr + ' ' + padZ(hour);
+          var taken = booked.has(key);
+          var past = (dateStr < today) || (dateStr === today && hour <= nowH);
+          btn.classList.remove('available', 'taken', 'selected');
+          if (taken || past) {
+            btn.classList.add('taken');
+            btn.disabled = true;
+            btn.title = taken ? 'Sudah dipesan' : 'Waktu lampau';
+          } else {
+            btn.classList.add('available');
+            btn.disabled = false;
+            btn.title = '';
+          }
+          if (slotInput && btn.dataset.slot === selectedSlot) btn.classList.add('selected');
+        });
+      }
+
+      if (dateInput) {
+        dateInput.addEventListener('change', function() {
+          selectedSlot = null;
+          if (slotInput) slotInput.value = '';
+          slotBtns.forEach(function(b) {
+            b.classList.remove('selected');
+          });
+          updateSlots(this.value);
+        });
+      }
+
+      slotBtns.forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          if (this.classList.contains('taken')) return;
+          selectedSlot = this.dataset.slot;
+          if (slotInput) slotInput.value = selectedSlot;
+          slotBtns.forEach(function(b) {
+            b.classList.remove('selected');
+          });
+          this.classList.add('selected');
+        });
+      });
+
+      // ── Pengujian: validasi tanggal lampau ──────────────────────
+      var pengujianInput = document.getElementById('waktu_pengujian_date');
+      var pengujianErr = document.getElementById('pengujian-past-error');
+      if (pengujianInput && pengujianErr) {
+        pengujianInput.addEventListener('change', function() {
+          var today = new Date().toISOString().substring(0, 10);
+          if (this.value < today) {
+            pengujianErr.style.display = 'block';
+            this.style.borderColor = '#f0ad4e';
+          } else {
+            pengujianErr.style.display = 'none';
+            this.style.borderColor = '';
+          }
+        });
+      }
+
+      // ── Form submit validation ───────────────────────────────────
+      var form = document.getElementById('checkout-form');
+      if (form) {
+        form.addEventListener('submit', function(e) {
+          // Validasi slot alat
+          if (slotBtns.length) {
+            var dateVal = dateInput ? dateInput.value : '';
+            var slotVal = slotInput ? slotInput.value : '';
+            if (!dateVal || !slotVal) {
+              e.preventDefault();
+              var errEl = document.getElementById('alat-slot-error');
+              if (errEl) errEl.style.display = 'block';
+              if (dateInput) dateInput.focus();
+              return;
+            }
+          }
+          // Validasi tanggal pengujian lampau
+          if (pengujianInput && pengujianInput.value) {
+            var today = new Date().toISOString().substring(0, 10);
+            if (pengujianInput.value < today) {
+              e.preventDefault();
+              if (pengujianErr) pengujianErr.style.display = 'block';
+              pengujianInput.focus();
+            }
+          }
+        });
+      }
+    })();
+  </script>
 </body>
 
 </html>

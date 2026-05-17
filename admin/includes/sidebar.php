@@ -2,8 +2,7 @@
     <!-- Sidebar -->
     <div class="sidebar d-flex flex-column flex-shrink-0" style="width: 260px;">
         <div class="sidebar-heading text-center">
-            <i class="fa-solid fa-flask text-info mb-2 fs-3"></i><br>
-            Lab Biosains
+            <img src="../images/logo-bioscience.png" alt="Bioscience Labs" style="height: 80px; margin: 10px 0;">
         </div>
         <div class="list-group list-group-flush mt-3 flex-grow-1">
             <a href="index.php" class="<?= $currentPage == 'index.php' ? 'active' : '' ?>">

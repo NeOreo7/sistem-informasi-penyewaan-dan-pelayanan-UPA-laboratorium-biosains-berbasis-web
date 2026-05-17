@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once 'database.php';
 require_once 'auth.php';
 
@@ -393,7 +393,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 </head>
 
 <body>
-  <a href="/minishop-master/index.php" class="btn back-btn">
+  <a href="/project-smt2/index.php" class="btn back-btn">
     <span class="ion-ios-arrow-back mr-2"></span> Kembali
   </a>
 
@@ -401,7 +401,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <div class="signin-card">
       <div class="signin-header">
         <div class="logo-container">
-          <a href="/minishop-master/index.php">
+          <a href="/project-smt2/index.php">
           </a>
         </div>
         <h1>Masuk Akun</h1>

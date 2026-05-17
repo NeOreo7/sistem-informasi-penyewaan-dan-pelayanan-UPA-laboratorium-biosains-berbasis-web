@@ -169,7 +169,7 @@ require_once 'includes/sidebar.php';
                 <div class="input-group input-group-sm">
                     <span class="input-group-text bg-light border-end-0"><i class="fa-solid fa-search text-muted"></i></span>
                     <input type="text" class="form-control border-start-0 bg-light" id="user-search-input"
-                           placeholder="Cari nama, email, atau telepon..." autocomplete="off">
+                        placeholder="Cari nama, email, atau telepon..." autocomplete="off">
                 </div>
             </div>
             <div class="card-body p-0">
@@ -293,56 +293,56 @@ require_once 'includes/sidebar.php';
 
 <!-- User Search Script -->
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const searchInput = document.getElementById('user-search-input');
-    const userRows = document.querySelectorAll('.user-row');
-    const noResults = document.getElementById('user-no-results');
-    const countBadge = document.getElementById('user-count-badge');
-    const totalUsers = <?= $countUsers ?>;
+    document.addEventListener('DOMContentLoaded', function() {
+        const searchInput = document.getElementById('user-search-input');
+        const userRows = document.querySelectorAll('.user-row');
+        const noResults = document.getElementById('user-no-results');
+        const countBadge = document.getElementById('user-count-badge');
+        const totalUsers = <?= $countUsers ?>;
 
-    if (!searchInput) return;
+        if (!searchInput) return;
 
-    searchInput.addEventListener('input', function() {
-        const query = this.value.toLowerCase().trim();
-        let visibleCount = 0;
+        searchInput.addEventListener('input', function() {
+            const query = this.value.toLowerCase().trim();
+            let visibleCount = 0;
 
-        userRows.forEach(function(row) {
-            const name  = row.dataset.name || '';
-            const email = row.dataset.email || '';
-            const phone = row.dataset.phone || '';
-            const role  = row.dataset.role || '';
+            userRows.forEach(function(row) {
+                const name = row.dataset.name || '';
+                const email = row.dataset.email || '';
+                const phone = row.dataset.phone || '';
+                const role = row.dataset.role || '';
 
-            const matches = query === '' ||
-                name.includes(query) ||
-                email.includes(query) ||
-                phone.includes(query) ||
-                role.includes(query);
+                const matches = query === '' ||
+                    name.includes(query) ||
+                    email.includes(query) ||
+                    phone.includes(query) ||
+                    role.includes(query);
 
-            if (matches) {
-                row.style.display = '';
-                visibleCount++;
+                if (matches) {
+                    row.style.display = '';
+                    visibleCount++;
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+
+            // Show/hide no results message
+            if (visibleCount === 0 && query !== '') {
+                noResults.classList.remove('d-none');
             } else {
-                row.style.display = 'none';
+                noResults.classList.add('d-none');
+            }
+
+            // Update badge counter
+            if (query === '') {
+                countBadge.textContent = totalUsers;
+                countBadge.className = 'badge bg-primary rounded-pill';
+            } else {
+                countBadge.textContent = visibleCount + '/' + totalUsers;
+                countBadge.className = 'badge bg-success rounded-pill';
             }
         });
-
-        // Show/hide no results message
-        if (visibleCount === 0 && query !== '') {
-            noResults.classList.remove('d-none');
-        } else {
-            noResults.classList.add('d-none');
-        }
-
-        // Update badge counter
-        if (query === '') {
-            countBadge.textContent = totalUsers;
-            countBadge.className = 'badge bg-primary rounded-pill';
-        } else {
-            countBadge.textContent = visibleCount + '/' + totalUsers;
-            countBadge.className = 'badge bg-success rounded-pill';
-        }
     });
-});
 </script>
 
 <?php require_once 'includes/footer.php'; ?>

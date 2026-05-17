@@ -5,12 +5,10 @@ require_once 'includes/auth.php';
 // Menangani form submission untuk tambah/edit item
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
     $action = $_POST['action'];
-    $nama_produk = $_POST['nama_produk'];
-    $kategori = $_POST['kategori'];
-    $deskripsi = $_POST['deskripsi'];
-    $min_duration = $_POST['min_duration'];
+    $nama_produk   = $_POST['nama_produk'];
+    $kategori      = $_POST['kategori'];
     $duration_unit = $_POST['duration_unit'];
-    $is_active = isset($_POST['is_active']) ? 1 : 0;
+    $is_active     = isset($_POST['is_active']) ? 1 : 0;
     
     // Harga per role
     $harga_mahasiswa = $_POST['harga_3'] ?? 0;
@@ -26,8 +24,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
             move_uploaded_file($_FILES['foto']['tmp_name'], $dir . $foto);
         }
 
-        $stmt = $conn->prepare("INSERT INTO products (nama_produk, kategori, foto, deskripsi, min_duration, duration_unit, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("ssssisi", $nama_produk, $kategori, $foto, $deskripsi, $min_duration, $duration_unit, $is_active);
+        $stmt = $conn->prepare("INSERT INTO products (nama_produk, kategori, foto, duration_unit, is_active) VALUES (?, ?, ?, ?, ?)");
+        $stmt->bind_param("ssssi", $nama_produk, $kategori, $foto, $duration_unit, $is_active);
         $stmt->execute();
         $id_product = $stmt->insert_id;
 
@@ -53,8 +51,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['action'])) {
             $update_foto = ", foto='$foto'";
         }
 
-        $stmt = $conn->prepare("UPDATE products SET nama_produk=?, kategori=?, deskripsi=?, min_duration=?, duration_unit=?, is_active=? $update_foto WHERE id_product=?");
-        $stmt->bind_param("sssisii", $nama_produk, $kategori, $deskripsi, $min_duration, $duration_unit, $is_active, $id_product);
+        $stmt = $conn->prepare("UPDATE products SET nama_produk=?, kategori=?, duration_unit=?, is_active=? $update_foto WHERE id_product=?");
+        $stmt->bind_param("sssii", $nama_produk, $kategori, $duration_unit, $is_active, $id_product);
         $stmt->execute();
 
         // Update prices (delete old and insert new to be safe/easy)
@@ -145,10 +143,9 @@ require_once 'includes/sidebar.php';
                         </td>
                         <td>
                             <div class="fw-bold"><?= htmlspecialchars($row['nama_produk']) ?></div>
-                            <small class="text-muted text-truncate d-block" style="max-width: 200px;"><?= htmlspecialchars($row['deskripsi'] ?? '') ?></small>
                         </td>
                         <td><span class="badge bg-info text-dark"><?= htmlspecialchars($row['kategori']) ?></span></td>
-                        <td><?= $row['min_duration'] ?> <?= htmlspecialchars($row['duration_unit']) ?></td>
+                        <td>Per <?= htmlspecialchars($row['duration_unit']) ?></td>
                         <td class="small">
                             <div>M: Rp <?= number_format($row['harga_mahasiswa'] ?: 0, 0, ',', '.') ?></div>
                             <div>D: Rp <?= number_format($row['harga_dosen'] ?: 0, 0, ',', '.') ?></div>
@@ -167,8 +164,6 @@ require_once 'includes/sidebar.php';
                                 data-id="<?= $row['id_product'] ?>"
                                 data-nama="<?= htmlspecialchars($row['nama_produk']) ?>"
                                 data-kategori="<?= htmlspecialchars($row['kategori']) ?>"
-                                data-deskripsi="<?= htmlspecialchars($row['deskripsi'] ?? '') ?>"
-                                data-min="<?= $row['min_duration'] ?>"
                                 data-unit="<?= htmlspecialchars($row['duration_unit']) ?>"
                                 data-active="<?= $row['is_active'] ?>"
                                 data-hm="<?= $row['harga_mahasiswa'] ?>"
@@ -214,26 +209,17 @@ require_once 'includes/sidebar.php';
                             </select>
                         </div>
                     </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Deskripsi</label>
-                        <textarea class="form-control" name="deskripsi" rows="3" required></textarea>
-                    </div>
 
                     <div class="row">
-                        <div class="col-md-4 mb-3">
+                        <div class="col-md-6 mb-3">
                             <label class="form-label fw-bold">Foto Item</label>
                             <input type="file" class="form-control" name="foto" accept="image/*">
                         </div>
-                        <div class="col-md-4 mb-3">
-                            <label class="form-label fw-bold">Minimal Durasi</label>
-                            <input type="number" class="form-control" name="min_duration" value="1" required>
-                        </div>
-                        <div class="col-md-4 mb-3">
-                            <label class="form-label fw-bold">Satuan Waktu</label>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">Satuan</label>
                             <select class="form-select" name="duration_unit" required>
-                                <option value="hour">Jam (Hour)</option>
-                                <option value="day">Hari (Day)</option>
+                                <option value="Orang">Orang</option>
+                                <option value="Sampel">Sampel</option>
                             </select>
                         </div>
                     </div>
@@ -303,26 +289,17 @@ require_once 'includes/sidebar.php';
                             </select>
                         </div>
                     </div>
-                    
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Deskripsi</label>
-                        <textarea class="form-control" name="deskripsi" id="edit_deskripsi" rows="3" required></textarea>
-                    </div>
 
                     <div class="row">
-                        <div class="col-md-4 mb-3">
+                        <div class="col-md-6 mb-3">
                             <label class="form-label fw-bold">Update Foto <small>(Opsional)</small></label>
                             <input type="file" class="form-control" name="foto" accept="image/*">
                         </div>
-                        <div class="col-md-4 mb-3">
-                            <label class="form-label fw-bold">Minimal Durasi</label>
-                            <input type="number" class="form-control" name="min_duration" id="edit_min" required>
-                        </div>
-                        <div class="col-md-4 mb-3">
-                            <label class="form-label fw-bold">Satuan Waktu</label>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">Satuan</label>
                             <select class="form-select" name="duration_unit" id="edit_unit" required>
-                                <option value="hour">Jam (Hour)</option>
-                                <option value="day">Hari (Day)</option>
+                                <option value="Orang">Orang</option>
+                                <option value="Sampel">Sampel</option>
                             </select>
                         </div>
                     </div>
@@ -370,13 +347,11 @@ require_once 'includes/sidebar.php';
 <script>
 document.querySelectorAll('.btn-edit').forEach(btn => {
     btn.addEventListener('click', function() {
-        document.getElementById('edit_id').value = this.dataset.id;
-        document.getElementById('edit_nama').value = this.dataset.nama;
+        document.getElementById('edit_id').value       = this.dataset.id;
+        document.getElementById('edit_nama').value     = this.dataset.nama;
         document.getElementById('edit_kategori').value = this.dataset.kategori;
-        document.getElementById('edit_deskripsi').value = this.dataset.deskripsi;
-        document.getElementById('edit_min').value = this.dataset.min;
-        document.getElementById('edit_unit').value = this.dataset.unit;
-        
+        document.getElementById('edit_unit').value     = this.dataset.unit;
+
         document.getElementById('edit_hm').value = this.dataset.hm;
         document.getElementById('edit_hd').value = this.dataset.hd;
         document.getElementById('edit_hp').value = this.dataset.hp;
